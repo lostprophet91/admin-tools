@@ -5,7 +5,7 @@ client=$2
 domaine=$3
 adresse=$4
 masque=$5
-dir="/root/scripts/deploiement"
+dir="/root/scripts/deploiement/routeur"
 script_dns_add=/root/scripts/dns_add_host.sh
 
 # Couleurs :
@@ -225,9 +225,9 @@ if ! [[ -d $LOG_FOLDER ]] ; then
   mkdir $LOG_FOLDER
 fi
 
-echo "=========================================================="
-echo "     Assistance au déploiement d'une nouvelle machine"
-echo "=========================================================="
+echo "========================================================="
+echo "     Assistance au déploiement d'un nouveau routeur"
+echo "========================================================="
 echo
 
 echo "$(date +%F" "%H:%M:%S ) ==> Début de déploiement" >> $LOG_FILE
@@ -287,12 +287,12 @@ ajouter "alias ll='ls -l'" "/root/.bashrc" "  Ajout des alias pour l'utilisateur
 
 copier "${dir}/files/motd" "/etc/motd" "  Copie du message d'accueil (motd)"
 
-copier "${dir}/files/motd_perso_client" "/etc/motd_perso" "  Copie du message d'accueil au premier demarrage (motd_perso)"
+copier "${dir}/files/motd_perso_routeur" "/etc/motd_perso" "  Copie du message d'accueil au premier demarrage (motd_perso)"
 
 ajouter "if test -f /var/log/first_run; then cat /etc/motd_perso; fi; rm -f /var/log/first_run\n" "/root/.bashrc" "  Ajout du script de message d'accueil au premier démarrage"
 
 # Scripts
-copier "-r ${dir}/files/scripts_client" "/root/" "  Copie des scripts"
+copier "-r ${dir}/files/scripts" "/root/" "  Copie des scripts"
 
 
 

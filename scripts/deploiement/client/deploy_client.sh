@@ -5,7 +5,7 @@ client=$2
 domaine=$3
 adresse=$4
 masque=$5
-dir="/root/scripts/deploiement"
+dir="/root/scripts/deploiement/client"
 script_dns_add=/root/scripts/dns_add_host.sh
 
 # Couleurs :
@@ -121,31 +121,16 @@ function reseau_valide() {
   local msg="Erreur inconnue."
   if [[ "$(echo $client | egrep "^([a-z]|[0-9]|\-)+")" = "" ]]; then
     msg="Erreur sur le nom du client."
-  elif [[ "$(echo $domaine | egrep "^([a-z]|[0-9]|\-)+")" = "" ]]; then
-    msg="Erreur sur le domaine."
-  elif [[ "$(dig NS $domaine | grep ANSWER | cut -d, -f2 | grep "ANSWER: 0")" = "" ]]; then
-    msg="Le domaine existe déjà quelque part."
   elif [[ "$(echo $serveur | egrep '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')" = "" ]]; then
     msg="Adresse IP du serveur non valide."
-  elif [[ "$(echo $adresse | egrep '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')" = "" ]]; then
-    msg="Adresse IP du sous-réseau non valide."
   elif nc -z -w 1 $adresse 22; then
     msg="L'adresse existe déjà quelque part."
-  elif [[ "$(echo $masque | egrep "^(8|16|24)+")" = "" ]]; then
-    msg="Le masque n'est pas valide (/8, 16 ou 24 seulement)."
   else
     retour=0
   fi
 
   if [[ $retour -eq 1 ]] ; then echo "${C_RED}${msg}${C_NORMAL}"; echo $msg >> $LOG_FILE; fi
   return $retour
-}
-
-function adresse_inverse() {
-  adresse_inv=$(echo $1 | cut -d. -f4) 
-  adresse_inv="${adresse_inv}.$(echo $1 | cut -d. -f3)"
-  adresse_inv="${adresse_inv}.$(echo $1 | cut -d. -f2)"
-  adresse_inv="${adresse_inv}.$(echo $1 | cut -d. -f1)"
 }
 
 function traitement_reseau() {
@@ -158,21 +143,7 @@ while ! reseau_valide ; do
   echo "Choisir le nom du client (ex: bull) :"
   echo -ne "  > "
   read client
-
-  echo "Choisir le domaine du sous-routeur (ex: bull.net) : "
-  echo -ne "  ${client}-routeur."
-  read domaine
-
-  echo "Choisir son adresse IP de sous-réseau (ex: 192.168.34.254) :"
-  echo -ne "  > "
-  read adresse
-
-  echo "Choisir son masque de sous-réseau (ex: 255.255.255.0) :"
-  echo -ne "  > "
-  read masque
 done
-
-adresse_inverse $adresse
 
 local nb_coupe=0
 local post_ad_masque=0
@@ -225,9 +196,9 @@ if ! [[ -d $LOG_FOLDER ]] ; then
   mkdir $LOG_FOLDER
 fi
 
-echo "========================================================="
-echo "     Assistance au déploiement d'un nouveau routeur"
-echo "========================================================="
+echo "=========================================================="
+echo "     Assistance au déploiement d'une nouvelle machine"
+echo "=========================================================="
 echo
 
 echo "$(date +%F" "%H:%M:%S ) ==> Début de déploiement" >> $LOG_FILE
@@ -287,7 +258,7 @@ ajouter "alias ll='ls -l'" "/root/.bashrc" "  Ajout des alias pour l'utilisateur
 
 copier "${dir}/files/motd" "/etc/motd" "  Copie du message d'accueil (motd)"
 
-copier "${dir}/files/motd_perso_routeur" "/etc/motd_perso" "  Copie du message d'accueil au premier demarrage (motd_perso)"
+copier "${dir}/files/motd_perso_client" "/etc/motd_perso" "  Copie du message d'accueil au premier demarrage (motd_perso)"
 
 ajouter "if test -f /var/log/first_run; then cat /etc/motd_perso; fi; rm -f /var/log/first_run\n" "/root/.bashrc" "  Ajout du script de message d'accueil au premier démarrage"
 
@@ -346,37 +317,12 @@ iface eth1 inet static
   netmask ${netmasque}\n" "/etc/network/interfaces" "  Configuration de la carte interne eth1"
     executer "ifup eth1" "    Montage de la carte eth1 ($adresse)"
 
-    # Installation du serveur DNS
-    installer "bind9 bind9-doc" "  Installation du serveur DNS"
-    d_named="/etc/bind"
-    f_named_conf="${d_named}/named.conf"
-    f_named_conf_local="${d_named}/named.conf.local"
-    d_zones="/var/lib/bind"
     ;;
   "redhat")
-    installer "named" "  Installation du serveur DNS"
     ;;
 esac
 retour_bind=$?
 
-# Copie du script de routage et execution
-copier "${dir}/files/scripts/init/routeur" "/etc/init.d/routeur" "  Copie du script d'init du routage"
-#executer "mkdir -p /root/scripts/reseau/" "    Création du dossier du script de routage"
-#copier "${dir}/files/scripts/init/script_routeur.sh" "/root/scripts/reseau/script_routeur.sh" "  Copie du script de routage"
-case $distrib in
-  "debian")
-    executer "update-rc.d routeur defaults" "    Execution automatique du script au démarrage"
-  ;;
-  "redhat")
-    executer "chkconfig routeur on" "    Execution automatique du script au démarrage"
-  ;;
-esac
-executer "chmod ug+x /etc/init.d/routeur; /etc/init.d/routeur start" "    Activation du mode routeur"
-
-if [[ "$(grep "$adresse_netmasque netmask $netmasque gw $serveur" /root/scripts/route_vers_sous_reseaux.sh)" = "" ]]  ; then
-  echo "route add -net $adresse_netmasque netmask $netmasque gw $serveur" >> /root/scripts/route_vers_sous_reseaux.sh
-fi
-afficher "sh /root/scripts/route_vers_sous_reseaux.sh" "    Activation du routage vers le sous-reseau $adresse_netmasque"
 
 # DHCP
 mac_ad="$(ssh $serveur /sbin/ifconfig | grep 'eth0' | tr -s ' ' | cut -d ' ' -f5)"
@@ -387,73 +333,6 @@ if [[ "$(grep $mac_ad /etc/dhcp/dhcpd.conf)" = "" ]]; then
 }\n" >> /etc/dhcp/dhcpd.conf
   afficher "/etc/init.d/isc-dhcp-server restart" "  Ajout d'une reservation de l'adresse $serveur dans le DHCP"
 fi
-
-installer "isc-dhcp-server" "  Installation du serveur DHCP"
-
-if [[ $? -eq 0 ]]; then 
-  sed -e "s/NETMASQUE/${netmasque}/g" -e "s/DOMAINE/${domaine}/g" -e "s/ADRESSE/${adresse}/g" -e "s/RANGE_DEB/${range_deb}/g" -e "s/RANGE_END/${range_end}/g"  -e "s/RESEAU/${adresse_netmasque}/g" < ${dir}/files/gabarit_dhcpd.conf > /tmp/$domaine.dhcpd.conf
-  copier "/tmp/$domaine.dhcpd.conf" "/etc/dhcp/dhcpd.conf" "    Copie du paramétrage du serveur DHCP"
-  rm /tmp/$domaine.dhcpd.conf
-  executer "/etc/init.d/isc-dhcp-server restart" "    Relance du serveur DHCP"
-fi
-
-
-if [[ $retour_bind -eq 0 ]]; then 
-  ajouter "include \\\"/etc/bind/rndc.key\\\";\n\
-controls {\n\
-  inet 127.0.0.1 allow { localhost; } keys { rndc-key; };\n\
-};\n" "/etc/bind/named.conf" "    Autorisation de RNDC en local"
-
-  ajouter "zone \\\"${domaine}\\\" {\n\
-  type master;\n\
-  file \\\"${d_zones}/$domaine.hosts\\\";\n\
-};\n\
-\n\
-zone \\\"$domaine_inv\\\" {\n\
-  type master;\n\
-  file \\\"${d_zones}/${domaine}.inverse\\\";\n\
-};\n" "${f_named_conf_local}" "   Ajout de la zone $domaine et son inverse $domaine_inv"
-
-  # Préparation des zones
-  sed -e "s/HOTE/${nom_routeur}/g" -e "s/DOMAINE/${domaine}/g" -e "s/ADRESSE/${adresse}/g" < ${dir}/files/gabarit_dns.hosts > /tmp/$domaine.hosts
-
-  sed  -e "s/DOMAINE_INV/${domaine_inv}/g" -e "s/HOTE/${nom_routeur}/g" -e "s/DOMAINE/${domaine}/g" -e "s/ADRESSE/${adresse}/g" < ${dir}/files/gabarit_dns.inverse > /tmp/$domaine.inverse
-  echo "Paramétrage du serveur DNS :"
-
-  copier "/tmp/$domaine.hosts" "${d_zones}/" "    Copie du gabarit de zone"
-  copier "/tmp/$domaine.inverse" "${d_zones}/" "    Copie du gabarit de zone inverse"
-
-  # Suppression des fichiers temporaires
-  rm -f /tmp/$domaine.hosts
-  rm -f /tmp/$domaine.inverse
-
-  copier "${dir}/files/named.conf.options" "${d_named}/named.conf.options" "    Copie des options BIND"
-
-  executer "/etc/init.d/bind9 reload" "    Relance du serveur BIND"
-
-  if test $? -eq 0 -a "$(grep $domaine /etc/bind/named.conf.local)" = "" ; then
-    echo -e "\n # Zone de forward vers le routeur $nom_routeur (IP: $serveur) pour la zone $domaine \n\
-zone \"${domaine}\" {\n\
-        type forward;\n\
-        forward only;\n\
-        forwarders {${serveur};} ;\n\
-};\n" >> /etc/bind/named.conf.local
-    afficher "/etc/init.d/bind9 reload" "  Ajout du forward de la zone ${domaine}"
-  fi
-
-fi
-
-
-# MAIL
-case $distrib in
-  "debian")
-  #  installer "postfix dovecot-imapd" "  Installation du serveur mail"
-    ;;
-  "redhat")
-   # installer "postfix dovecot" "  Installation du serveur mail"
-    #executer "yum remove sendmail" "  Désinstallation du précédent serveur mail" 
-    ;;
-esac
 
 
 
@@ -466,11 +345,11 @@ if [[ $? -eq 0 ]]; then
   copier "${dir}/files/.vimrc" "/root/" "  Configuration de VIM"
 fi
 
-ajouter "domaine=\"$domaine\"\ndir_zones=\"$d_zones\"\n" "/root/scripts/dns/domaine" "  Configuration des scripts"
-ajouter "alias dns_add='sh /root/scripts/dns/dns_add_host.sh'\n\
-alias dns_del='sh /root/scripts/dns/dns_del_host.sh'\n\
-alias dns_list='sh /root/scripts/dns/dns_list_hosts.sh'\n\
-alias service='sh /etc/init.d/'\n" "/root/.bashrc" "  Ajout des alias de scripts pour \"root\""
+#ajouter "domaine=\"$domaine\"\ndir_zones=\"$d_zones\"\n" "/root/scripts/dns/domaine" "  Configuration des scripts"
+#ajouter "alias dns_add='sh /root/scripts/dns/dns_add_host.sh'\n\
+#alias dns_del='sh /root/scripts/dns/dns_del_host.sh'\n\
+#alias dns_list='sh /root/scripts/dns/dns_list_hosts.sh'\n\
+#alias service='sh /etc/init.d/'\n" "/root/.bashrc" "  Ajout des alias de scripts pour \"root\""
 
 
 
