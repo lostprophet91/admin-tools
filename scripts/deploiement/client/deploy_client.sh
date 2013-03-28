@@ -1,10 +1,18 @@
 #!/bin/bash
 
 serveur=$1
-client=$2
-domaine=$3
-adresse=$4
-masque=$5
+nom_serveur=$2
+adresse=$3
+
+if [[ "$(hostname)" = "" ]]; then
+  netmasque="$(ifconfig eth0 | grep "inet " | cut -d":" -f4 | cut -d" " -f1)"
+else
+  netmasque="$(ifconfig eth1 | grep "inet " | cut -d":" -f4 | cut -d" " -f1)"
+fi
+
+domaine="$(grep "zone \"" /etc/bind/named.conf.local | head -n1 | cut -d"\"" -f2)"
+client="$(cat /root/nom_client)"
+
 dir="/root/scripts/deploiement/client"
 script_dns_add=/root/scripts/dns_add_host.sh
 
@@ -14,7 +22,7 @@ C_GREEN=$(tput setaf 2)
 C_NORMAL=$(tput sgr0)
 
 if [[ "$serveur" = "" ]]; then
-  echo "  Usage : $0 adresse_du_serveur [nom_du_client] [zone_dns_client] [sous-réseau] [masque]"
+  echo "  Usage : $0 adresse_du_serveur_actuel [nom_du_serveur] [adresse_voulue_pour_le_serveur]"
   exit 0
 fi
 
@@ -119,9 +127,11 @@ function reseau_valide() {
   # Test la validité des informations fournies à propos du réseau
   local retour=1
   local msg="Erreur inconnue."
-  if [[ "$(echo $client | egrep "^([a-z]|[0-9]|\-)+")" = "" ]]; then
+  if [[ "$(echo $nom_serveur | egrep "^([a-z]|[0-9]|\-)+")" = "" ]]; then
     msg="Erreur sur le nom du client."
   elif [[ "$(echo $serveur | egrep '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')" = "" ]]; then
+    msg="Adresse IP du serveur non valide."
+  elif [[ "$(echo $adresse | egrep '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')" = "" ]]; then
     msg="Adresse IP du serveur non valide."
   elif nc -z -w 1 $adresse 22; then
     msg="L'adresse existe déjà quelque part."
@@ -140,40 +150,10 @@ while ! reseau_valide ; do
   echo -ne "  > "
   read serveur
 
-  echo "Choisir le nom du client (ex: bull) :"
+  echo "Choisir le nom du serveur (ex: mon-beau-serveur) :"
   echo -ne "  > "
-  read client
+  read nom_serveur
 done
-
-local nb_coupe=0
-local post_ad_masque=0
-local deb=0
-local end=0
-
-case $masque in
-  "8")
-    nb_coupe="1"
-    netmasque="255.0.0.0"
-    post_ad_masque="0.0.0"
-    deb="1.1.1" ;end="254.254.254"
-    ;;
-  "16")
-    nb_coupe="1,2"
-    netmasque="255.255.0.0"
-    post_ad_masque="0.0"
-    deb="1.1" ;end="254.254"
-    ;;
-  "24")
-    nb_coupe="1,2,3"
-    netmasque="255.255.255.0"
-    post_ad_masque="0"
-    deb="1" ;end="254"
-    ;;
-esac
-domaine_inv="$(echo $adresse_inv | cut -d. -f${nb_coupe}).in-addr.arpa"
-adresse_netmasque="$(echo $adresse | cut -d. -f${nb_coupe}).$post_ad_masque"
-range_deb="$(echo $adresse | cut -d. -f${nb_coupe}).$deb"
-range_end="$(echo $adresse | cut -d. -f${nb_coupe}).$end"
 
 }
 
@@ -207,11 +187,11 @@ echo "$(date +%F" "%H:%M:%S ) ==> Début de déploiement" >> $LOG_FILE
 
 # ============================================================
 traitement_reseau
-nom_routeur="${client}-routeur"
+nom_routeur="${client}-$nom_serveur"
 # Vérification de présence dans le DNS ou ajout en cas de besoin
-if [[ "$(bash /root/scripts/dns/dns_list_hosts.sh ${nom_routeur} | grep $serveur | grep -v Scope)" = "" ]]; then 
+if [[ "$(bash /root/scripts/dns/dns_list_hosts.sh ${nom_client} | grep $serveur | grep -v Scope)" = "" ]]; then 
   adresse_lan=""
-  afficher "bash /root/scripts/dns/dns_add_host.sh $nom_routeur $serveur" "Ajout de $nom_routeur (IP:$serveur) dans le DNS"
+  afficher "bash /root/scripts/dns/dns_add_host.sh $nom_client $serveur" "Ajout de $nom_client (IP:$serveur) dans le DNS"
   test_ret $?
 fi
 
@@ -310,12 +290,11 @@ case $distrib in
   "debian")
     # Configuration du réseau strict
     executer "echo $nom_routeur > /etc/hostname; /etc/init.d/hostname.sh" "  Modification du nom en $nom_routeur"
-    ajouter "\n# Reseau interne du client $client :\n\
-allow-hotplug eth1
-iface eth1 inet static
-  address ${adresse}
-  netmask ${netmasque}\n" "/etc/network/interfaces" "  Configuration de la carte interne eth1"
-    executer "ifup eth1" "    Montage de la carte eth1 ($adresse)"
+#    ajouter "\n# Reseau interne du client $client :\n\
+#allow-hotplug eth0\n\
+#iface eth0 inet static\n\
+#  address ${adresse}\n\
+#  netmask ${netmasque}\n" "/etc/network/interfaces" "  Configuration de la carte interne eth0"
 
     ;;
   "redhat")
@@ -329,7 +308,7 @@ mac_ad="$(ssh $serveur /sbin/ifconfig | grep 'eth0' | tr -s ' ' | cut -d ' ' -f5
 if [[ "$(grep $mac_ad /etc/dhcp/dhcpd.conf)" = "" ]]; then
   echo -e "\n host $nom_routeur {\n\
   hardware ethernet $mac_ad;\n\
-  fixed-address $serveur;\n\
+  fixed-address $adresse;\n\
 }\n" >> /etc/dhcp/dhcpd.conf
   afficher "/etc/init.d/isc-dhcp-server restart" "  Ajout d'une reservation de l'adresse $serveur dans le DHCP"
 fi
@@ -355,9 +334,16 @@ fi
 
 # ============================================================
 echo "Ultime configuration :"
+
+echo -ne "Reconfiguration du réseau, veuillez attendre"
+ssh -o "ConnectTimeout 1" -o "ConnectionAttempts 1" $serveur "ifdown eth0 &>/dev/null; sleep 2; ifup eth0" & echo "."
+
+while [[ "$(ping -c1 $adresse | grep "1 received")" = "" ]]; do sleep 1;echo -ne "."; done
+
+afficher "echo OK" "  Relance de la carte eth0 ($adresse)"
+sleep 1
+serveur="$adresse"
 executer "touch /var/log/first_run" "  Activation du premier démarrage"
-
-
 
 # ============================================================
 echo
