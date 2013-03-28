@@ -1,0 +1,71 @@
+#!/bin/sh -e
+
+### BEGIN INIT INFO
+# Provides:          Routeur
+# Required-Start:    
+# Required-Stop:
+# Should-Start:      $network $syslog
+# Should-Stop:       $network $syslog
+# Default-Start:     2 3 4 5
+# Default-Stop:      0 1 6
+# Short-Description: Permet de lancer/arreter le routeur
+# Description:       Ce script permet de detuter un mode routeur
+#       avec ce serveur, et tous les services associes 
+### END INIT INFO
+
+PATH=/sbin:/bin:/usr/sbin:/usr/bin
+
+LOCKFILE="/tmp/mode_routeur_actif"
+SCRIPT_ROUTEUR="/root/scripts/reseau/script_routeur.sh"
+
+. /lib/lsb/init-functions
+
+case "$1" in
+    start)
+	log_daemon_msg "Demarrage du mode routeur" "$SCRIPT_ROUTEUR"
+
+	if [ -f $LOCKFILE ]; then
+            log_begin_msg " deja actif !"
+	    log_end_msg 1
+	fi
+
+            touch $LOCKFILE
+	    if sh $SCRIPT_ROUTEUR; then
+	      log_end_msg 0
+            else
+              log_end_msg 1
+            fi
+    ;;
+
+    stop)
+	log_daemon_msg "Arret du mode routeur" "$SCRIPT_ROUTEUR"
+	iptables -F
+	iptables -t nat -F
+	iptables -t mangle -F
+	iptables -X
+	echo 0 > /proc/sys/net/ipv4/ip_forward
+	rm $LOCKFILE
+	log_end_msg 0
+    ;;
+
+    restart)
+	$0 stop
+	$0 start
+    ;;
+    
+    status)
+	log_daemon_msg "Mode routeur"
+	if [ -f $LOCKFILE ]; then
+		echo "actif"
+	else
+		echo "inactif"
+	fi
+	;;
+
+    *)
+	log_action_msg "Usage: /etc/init.d/routeur {start|stop|restart|status}"
+	exit 1
+    ;;
+esac
+
+exit 0
