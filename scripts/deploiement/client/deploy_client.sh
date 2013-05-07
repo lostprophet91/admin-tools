@@ -1,7 +1,7 @@
 #!/bin/bash
 
 serveur=$1
-nom_serveur=$2
+nom_client=$2
 adresse=$3
 
 if [[ "$(hostname)" = "" ]]; then
@@ -14,11 +14,12 @@ domaine="$(grep "zone \"" /etc/bind/named.conf.local | head -n1 | cut -d"\"" -f2
 client="$(cat /root/nom_client)"
 
 dir="/root/scripts/deploiement/client"
-script_dns_add=/root/scripts/dns_add_host.sh
+script_dns_add=/root/scripts/dns/dns_add_host.sh
 
 # Couleurs :
 C_RED=$(tput setaf 1)
 C_GREEN=$(tput setaf 2)
+C_YELLOW=$(tput setaf 3)
 C_NORMAL=$(tput sgr0)
 
 if [[ "$serveur" = "" ]]; then
@@ -35,18 +36,24 @@ function afficher() {
   local LARGEUR=$(tput cols)
 
   let LARGEUR-=${#2}
-  echo "$(date +%F" "%H:%M:%S ) -> $2" >> $LOG_FILE
+  local la_date="$(date +%F" "%H:%M:%S)"
+  echo "$la_date -> $2" >> $LOG_FILE
   
   echo -ne "$2"
 
   if $1 &>>$LOG_FILE; then
     retour=$?
     let LARGEUR+=2
-    printf '%*s%s%s\n' $LARGEUR "[$C_GREEN" "OK" "${C_NORMAL}]"
+    #printf '%*s%s%s\n' $LARGEUR "[$C_GREEN" "OK" "${C_NORMAL}]"
+    echo " [${C_GREEN}OK${C_NORMAL}]"
   else
     retour=$?
     let LARGEUR-=2
-    printf '%*s%s%s\n' $LARGEUR "[$C_RED" "ERREUR" "${C_NORMAL}]"
+    #printf '%*s%s%s\n' $LARGEUR "[$C_RED" "ERREUR" "${C_NORMAL}]"
+    echo " [${C_RED}ERREUR${C_NORMAL}]"
+    echo -n $C_YELLOW
+    grep -A 100 "$la_date" $LOG_FILE
+    echo -n $C_NORMAL
   fi
 
   return $retour
@@ -127,10 +134,10 @@ function reseau_valide() {
   # Test la validité des informations fournies à propos du réseau
   local retour=1
   local msg="Erreur inconnue."
-  if [[ "$(echo $nom_serveur | egrep "^([a-z]|[0-9]|\-)+")" = "" ]]; then
+  if [[ "$(echo $nom_client | egrep "^([a-z]|[0-9]|\-)+")" = "" ]]; then
     msg="Erreur sur le nom du client."
   elif [[ "$(echo $serveur | egrep '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')" = "" ]]; then
-    msg="Adresse IP du serveur non valide."
+    msg="Adresse IP du serclient non valide."
   elif [[ "$(echo $adresse | egrep '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')" = "" ]]; then
     msg="Adresse IP du serveur non valide."
   elif nc -z -w 1 $adresse 22; then
@@ -152,7 +159,8 @@ while ! reseau_valide ; do
 
   echo "Choisir le nom du serveur (ex: mon-beau-serveur) :"
   echo -ne "  > "
-  read nom_serveur
+  read nom_client
+
 done
 
 }
@@ -187,11 +195,13 @@ echo "$(date +%F" "%H:%M:%S ) ==> Début de déploiement" >> $LOG_FILE
 
 # ============================================================
 traitement_reseau
-nom_routeur="${client}-$nom_serveur"
+nom_routeur="${client}-$nom_client"
 # Vérification de présence dans le DNS ou ajout en cas de besoin
 if [[ "$(bash /root/scripts/dns/dns_list_hosts.sh ${nom_client} | grep $serveur | grep -v Scope)" = "" ]]; then 
   adresse_lan=""
-  afficher "bash /root/scripts/dns/dns_add_host.sh $nom_client $serveur" "Ajout de $nom_client (IP:$serveur) dans le DNS"
+  afficher "bash /root/scripts/dns/dns_add_host.sh $nom_client $adresse" "Ajout de $nom_client (IP:$adresse) dans le DNS"
+  test_ret $?
+  afficher "bash /root/scripts/dns/dns_add_host.sh $nom_routeur $nom_client" "Ajout de $nom_routeur (vers:$nom_client) dans le DNS"
   test_ret $?
 fi
 
@@ -206,6 +216,8 @@ if [[ "$(ssh $serveur md5sum /etc/motd | cut -d' ' -f1)" = "$(md5sum ${dir}/file
   echo "Abandon, le serveur distant ($serveur) est déjà paramétré"
   exit 1
 fi
+
+executer "restorecon -R -v /root/.ssh" "  Resolution du bogue SELinux sur CentOS6"
 
 
 
@@ -298,15 +310,15 @@ case $distrib in
 
     ;;
   "redhat")
+    executer "echo -e "NETWORKING=yes\nHOSTNAME=$nom_routeur" > /etc/sysconfig/network" "  Modification du nom en $nom_routeur"
     ;;
 esac
 retour_bind=$?
 
-
 # DHCP
-mac_ad="$(ssh $serveur /sbin/ifconfig | grep 'eth0' | tr -s ' ' | cut -d ' ' -f5)"
+mac_ad="$(ssh $serveur /sbin/ifconfig | grep eth0 | head -n 1 | tr -s ' ' | cut -d ' ' -f5)"
 if [[ "$(grep $mac_ad /etc/dhcp/dhcpd.conf)" = "" ]]; then
-  echo -e "\n host $nom_routeur {\n\
+  echo -e "\nhost $nom_routeur {\n\
   hardware ethernet $mac_ad;\n\
   fixed-address $adresse;\n\
 }\n" >> /etc/dhcp/dhcpd.conf

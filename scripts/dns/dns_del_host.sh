@@ -19,13 +19,13 @@ fi
 ### Vérification de la définition de la destination
 
 if test "$host_dest" = ""; then
-  liste=$(. /root/scripts/dns_list_hosts.sh | grep -v "Scope" | grep "$host_name")
+  liste=$(. /root/scripts/dns/dns_list_hosts.sh | grep -v "Scope" | grep "$host_name")
   if [ "$liste" = "" ]; then
     echo "Aucune entrée trouvée correspondant à \"$host_name\". Abandon."
     exit 0
   fi
   echo "Liste des entrées de $host_name :"
-  . /root/scripts/dns_list_hosts.sh | grep -v "Scope" | grep "$host_name"
+  . /root/scripts/dns/dns_list_hosts.sh | grep -v "Scope" | grep "$host_name"
   echo "Etes-vous sûr de supprimer toutes les entrées correspondant à \"$host_name\" ? (y/n)"
   read result
   if [ "$result" = "y" ]; then

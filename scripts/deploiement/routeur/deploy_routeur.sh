@@ -123,7 +123,7 @@ function reseau_valide() {
     msg="Erreur sur le nom du client."
   elif [[ "$(echo $domaine | egrep "^([a-z]|[0-9]|\-)+")" = "" ]]; then
     msg="Erreur sur le domaine."
-  elif [[ "$(dig NS $domaine | grep ANSWER | cut -d, -f2 | grep "ANSWER: 0")" = "" ]]; then
+  elif [[ "$(dig NS $domaine | egrep "ANSWER: 0|timed out")" = "" ]]; then
     msg="Le domaine existe déjà quelque part."
   elif [[ "$(echo $serveur | egrep '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')" = "" ]]; then
     msg="Adresse IP du serveur non valide."
@@ -476,6 +476,7 @@ alias service='sh /etc/init.d/'\n" "/root/.bashrc" "  Ajout des alias de scripts
 
 # ============================================================
 echo "Ultime configuration :"
+ajouter "$client" "/root/nom_client"
 executer "touch /var/log/first_run" "  Activation du premier démarrage"
 
 
